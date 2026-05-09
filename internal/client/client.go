@@ -26,6 +26,8 @@ var (
 	ErrConnectFailed = errors.New("tunnel connection failed")
 	// ErrProxyAuth is returned when SOCKS proxy authentication fails.
 	ErrProxyAuth = errors.New("SOCKS proxy auth failed")
+	// ErrNoAcceptableSOCKSAuthMethod is returned when the client does not offer a usable auth method.
+	ErrNoAcceptableSOCKSAuthMethod = errors.New("no acceptable socks auth method")
 	// ErrKeySize is returned when the encryption key is not 32 bytes.
 	ErrKeySize = errors.New("key must be 32 bytes")
 	// ErrInvalidSOCKSVersion is returned when the SOCKS version is not 5.
@@ -47,7 +49,11 @@ type Client struct {
 	sessMu    sync.RWMutex
 	clientID  string
 	dnsServer string
+	socksUser string
+	socksPass string
 }
+
+const socks5HandshakeTimeout = 10 * time.Second
 
 // Run starts the client with the specified parameters.
 func Run(
@@ -100,8 +106,8 @@ func RunWithReady(
 	clientID string,
 	localAddr string,
 	dnsServer,
-	_ string,
-	_ string,
+	socksUser string,
+	socksPass string,
 	onReady func(),
 	videoWidth int,
 	videoHeight int,
@@ -128,7 +134,7 @@ func RunWithReady(
 		return fmt.Errorf("setupCipher failed: %w", err)
 	}
 
-	c := &Client{cipher: cipher, clientID: clientID, dnsServer: dnsServer}
+	c := &Client{cipher: cipher, clientID: clientID, dnsServer: dnsServer, socksUser: socksUser, socksPass: socksPass}
 
 	if err := c.bringUpLink(
 		runCtx, linkName, transportName, carrierName, roomURL, cancel,
@@ -324,6 +330,7 @@ func (c *Client) acceptLoop(ctx context.Context, ln net.Listener) {
 
 func (c *Client) handleSocks5(_ context.Context, conn net.Conn) {
 	defer func() { _ = conn.Close() }()
+	_ = conn.SetDeadline(time.Now().Add(socks5HandshakeTimeout))
 
 	if err := c.socks5Handshake(conn); err != nil {
 		return
@@ -333,6 +340,7 @@ func (c *Client) handleSocks5(_ context.Context, conn net.Conn) {
 	if err != nil {
 		return
 	}
+	_ = conn.SetDeadline(time.Time{})
 
 	c.sessMu.RLock()
 	sess := c.session
@@ -411,8 +419,65 @@ func (c *Client) socks5Handshake(conn net.Conn) error {
 	if _, err := io.ReadFull(conn, methods); err != nil {
 		return fmt.Errorf("read socks5 methods: %w", err)
 	}
-	if _, err := conn.Write([]byte{5, 0}); err != nil {
+	method, err := c.selectAuthMethod(methods)
+	if err != nil {
+		_, _ = conn.Write([]byte{5, 0xff})
+		return err
+	}
+	if _, err := conn.Write([]byte{5, method}); err != nil {
 		return fmt.Errorf("write socks5 auth: %w", err)
+	}
+	if method == 0x02 {
+		if err := c.socks5UserPassAuth(conn); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *Client) selectAuthMethod(methods []byte) (byte, error) {
+	requireAuth := c.socksUser != "" || c.socksPass != ""
+	for _, method := range methods {
+		if requireAuth && method == 0x02 {
+			return 0x02, nil
+		}
+		if !requireAuth && method == 0x00 {
+			return 0x00, nil
+		}
+	}
+	return 0, ErrNoAcceptableSOCKSAuthMethod
+}
+
+func (c *Client) socks5UserPassAuth(conn net.Conn) error {
+	header := make([]byte, 2)
+	if _, err := io.ReadFull(conn, header); err != nil {
+		return fmt.Errorf("read socks5 auth header: %w", err)
+	}
+	if header[0] != 0x01 {
+		_, _ = conn.Write([]byte{0x01, 0x01})
+		return fmt.Errorf("%w: invalid username/password auth version %d", ErrProxyAuth, header[0])
+	}
+
+	username := make([]byte, header[1])
+	if _, err := io.ReadFull(conn, username); err != nil {
+		return fmt.Errorf("read socks5 username: %w", err)
+	}
+
+	passLen := make([]byte, 1)
+	if _, err := io.ReadFull(conn, passLen); err != nil {
+		return fmt.Errorf("read socks5 password len: %w", err)
+	}
+	password := make([]byte, passLen[0])
+	if _, err := io.ReadFull(conn, password); err != nil {
+		return fmt.Errorf("read socks5 password: %w", err)
+	}
+
+	if string(username) != c.socksUser || string(password) != c.socksPass {
+		_, _ = conn.Write([]byte{0x01, 0x01})
+		return ErrProxyAuth
+	}
+	if _, err := conn.Write([]byte{0x01, 0x00}); err != nil {
+		return fmt.Errorf("write socks5 auth result: %w", err)
 	}
 	return nil
 }

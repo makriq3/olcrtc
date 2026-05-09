@@ -117,6 +117,116 @@ func TestSocks5HandshakeReadMethodsError(t *testing.T) {
 	}
 }
 
+func TestSocks5HandshakeWithUserPassAuth(t *testing.T) {
+	c := &Client{socksUser: "user", socksPass: "pass"}
+	server, client := net.Pipe()
+	defer func() {
+		_ = server.Close()
+		_ = client.Close()
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- c.socks5Handshake(server)
+	}()
+
+	if _, err := client.Write([]byte{5, 1, 0x02}); err != nil {
+		t.Fatalf("Write() auth methods error = %v", err)
+	}
+	resp := make([]byte, 2)
+	if _, err := io.ReadFull(client, resp); err != nil {
+		t.Fatalf("ReadFull(method response) error = %v", err)
+	}
+	if !bytes.Equal(resp, []byte{5, 0x02}) {
+		t.Fatalf("method response = %v, want [5 2]", resp)
+	}
+
+	authReq := append([]byte{0x01, 4}, []byte("user")...)
+	authReq = append(authReq, 4)
+	authReq = append(authReq, []byte("pass")...)
+	if _, err := client.Write(authReq); err != nil {
+		t.Fatalf("Write() auth request error = %v", err)
+	}
+	if _, err := io.ReadFull(client, resp); err != nil {
+		t.Fatalf("ReadFull(auth response) error = %v", err)
+	}
+	if !bytes.Equal(resp, []byte{0x01, 0x00}) {
+		t.Fatalf("auth response = %v, want [1 0]", resp)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("socks5Handshake() error = %v", err)
+	}
+}
+
+func TestSocks5HandshakeRejectsMissingUserPassMethod(t *testing.T) {
+	c := &Client{socksUser: "user", socksPass: "pass"}
+	server, client := net.Pipe()
+	defer func() {
+		_ = server.Close()
+		_ = client.Close()
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- c.socks5Handshake(server)
+	}()
+
+	if _, err := client.Write([]byte{5, 1, 0x00}); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	resp := make([]byte, 2)
+	if _, err := io.ReadFull(client, resp); err != nil {
+		t.Fatalf("ReadFull() error = %v", err)
+	}
+	if !bytes.Equal(resp, []byte{5, 0xff}) {
+		t.Fatalf("handshake response = %v, want [5 255]", resp)
+	}
+	if err := <-done; !errors.Is(err, ErrNoAcceptableSOCKSAuthMethod) {
+		t.Fatalf("socks5Handshake() error = %v, want %v", err, ErrNoAcceptableSOCKSAuthMethod)
+	}
+}
+
+func TestSocks5HandshakeRejectsBadUserPass(t *testing.T) {
+	c := &Client{socksUser: "user", socksPass: "pass"}
+	server, client := net.Pipe()
+	defer func() {
+		_ = server.Close()
+		_ = client.Close()
+	}()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- c.socks5Handshake(server)
+	}()
+
+	if _, err := client.Write([]byte{5, 1, 0x02}); err != nil {
+		t.Fatalf("Write() auth methods error = %v", err)
+	}
+	resp := make([]byte, 2)
+	if _, err := io.ReadFull(client, resp); err != nil {
+		t.Fatalf("ReadFull(method response) error = %v", err)
+	}
+	if !bytes.Equal(resp, []byte{5, 0x02}) {
+		t.Fatalf("method response = %v, want [5 2]", resp)
+	}
+
+	authReq := append([]byte{0x01, 4}, []byte("user")...)
+	authReq = append(authReq, 5)
+	authReq = append(authReq, []byte("wrong")...)
+	if _, err := client.Write(authReq); err != nil {
+		t.Fatalf("Write() auth request error = %v", err)
+	}
+	if _, err := io.ReadFull(client, resp); err != nil {
+		t.Fatalf("ReadFull(auth response) error = %v", err)
+	}
+	if !bytes.Equal(resp, []byte{0x01, 0x01}) {
+		t.Fatalf("auth response = %v, want [1 1]", resp)
+	}
+	if err := <-done; !errors.Is(err, ErrProxyAuth) {
+		t.Fatalf("socks5Handshake() error = %v, want %v", err, ErrProxyAuth)
+	}
+}
+
 func TestSocks5RequestIPv4(t *testing.T) {
 	c := &Client{}
 	server, client := net.Pipe()
