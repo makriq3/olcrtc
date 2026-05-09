@@ -274,7 +274,7 @@ podman run -d \
     $IMAGE_NAME \
     ./olcrtc -mode cnc -carrier "$CARRIER" -id "$ROOM_ID" -client-id "$CLIENT_ID" -key "$KEY" \
         -link direct -transport "$TRANSPORT" -dns "$DNS" -data data \
-        -socks-host 0.0.0.0 -socks-port "$SOCKS_PORT" "${TRANSPORT_ARGS[@]}"
+        -socks-host 127.0.0.1 -socks-port "$SOCKS_PORT" "${TRANSPORT_ARGS[@]}"
 
 sleep 2
 

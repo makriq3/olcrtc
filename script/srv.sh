@@ -304,8 +304,9 @@ else
     chmod 600 "$KEY_FILE"
     echo ""
     echo "=========================================="
-    echo "NEW ENCRYPTION KEY (saved to $KEY_FILE):"
-    echo "$KEY"
+    echo "NEW ENCRYPTION KEY GENERATED AND SAVED TO:"
+    echo "$KEY_FILE"
+    echo "Keep this file private; the key is not echoed to stdout."
     echo "=========================================="
     echo ""
 fi
@@ -329,7 +330,7 @@ echo "Carrier:        $CARRIER"
 echo "Transport:      $TRANSPORT"
 echo "Room ID:        $ROOM_ID"
 echo "Client ID:      $CLIENT_ID"
-echo "Encryption key: $KEY"
+echo "Encryption key: [hidden] (stored at $KEY_FILE)"
 
 if [ ${#EXTRA_ARGS[@]} -gt 0 ]; then
     echo "SOCKS5 proxy:   $SOCKS_PROXY_ADDR:$SOCKS_PROXY_PORT"
@@ -343,7 +344,7 @@ echo "Stop server:"
 echo "  podman stop $CONTAINER_NAME"
 echo ""
 echo "Client command:"
-echo -n "  ./olcrtc -mode cnc -carrier \"$CARRIER\" -id \"$ROOM_ID\" -client-id \"$CLIENT_ID\" -key \"$KEY\" \\"
+echo -n "  ./olcrtc -mode cnc -carrier \"$CARRIER\" -id \"$ROOM_ID\" -client-id \"$CLIENT_ID\" -key \"<read-from-$KEY_FILE>\" \\"
 echo ""
 echo -n "    -link direct -transport \"$TRANSPORT\" -dns 1.1.1.1:53 -data data \\"
 echo ""
@@ -369,5 +370,5 @@ if [ "$TRANSPORT" = "seichannel" ]; then
     echo ""
 fi
 
-echo "    -socks-host 0.0.0.0 -socks-port 1080"
+echo "    -socks-host 127.0.0.1 -socks-port 1080"
 echo ""

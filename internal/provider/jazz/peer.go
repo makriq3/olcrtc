@@ -77,8 +77,8 @@ func NewPeer(ctx context.Context, roomID, name string, onData func([]byte)) (*Pe
 		if err != nil {
 			return nil, fmt.Errorf("create room: %w", err)
 		}
-		log.Printf("Jazz room created: %s:%s", roomInfo.RoomID, roomInfo.Password)
-		log.Printf("To connect client use: -id \"%s:%s\"", roomInfo.RoomID, roomInfo.Password)
+		log.Printf("Jazz room created: %s", roomInfo.RoomID)
+		log.Printf("Jazz room password generated; share it with the client out-of-band")
 	} else {
 		var password string
 		parts := strings.Split(roomID, ":")

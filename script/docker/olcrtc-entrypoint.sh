@@ -83,7 +83,7 @@ if [ -z "$key" ]; then
         umask 077
         printf '%s\n' "$key" > "$key_file"
         echo "olcrtc-entrypoint: generated encryption key and saved it to $key_file" >&2
-        echo "olcrtc-entrypoint: OLCRTC_KEY=$key" >&2
+        echo "olcrtc-entrypoint: keep $key_file private; the key is not echoed to logs" >&2
     fi
 fi
 
